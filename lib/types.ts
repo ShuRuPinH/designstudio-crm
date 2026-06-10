@@ -1,19 +1,16 @@
 export type UserRole = "manager" | "admin";
 
-export type LeadStatus =
-  | "new"
-  | "contacted"
-  | "qualified"
-  | "proposal"
-  | "won"
-  | "lost";
+export type LeadStatus = "new" | "contacted" | "won" | "lost";
 
 export interface Profile {
   id: string;
-  email: string;
-  full_name: string;
+  full_name: string | null;
   role: UserRole;
   created_at: string;
+}
+
+export interface ProfileWithEmail extends Profile {
+  email: string;
 }
 
 export interface Lead {
@@ -23,17 +20,15 @@ export interface Lead {
   phone: string | null;
   company: string | null;
   status: LeadStatus;
-  assigned_to: string;
+  assigned_to: string | null;
+  notes: string | null;
   created_at: string;
-  updated_at: string;
-  profiles?: Pick<Profile, "full_name" | "email">;
+  profiles?: Pick<Profile, "full_name">;
 }
 
 export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
   new: "Новый",
   contacted: "Контакт установлен",
-  qualified: "Квалифицирован",
-  proposal: "Предложение",
   won: "Выигран",
   lost: "Проигран",
 };

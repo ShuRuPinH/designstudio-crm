@@ -9,8 +9,6 @@ interface LeadsTableProps {
 const STATUS_COLORS: Record<Lead["status"], string> = {
   new: "bg-blue-100 text-blue-800",
   contacted: "bg-yellow-100 text-yellow-800",
-  qualified: "bg-purple-100 text-purple-800",
-  proposal: "bg-orange-100 text-orange-800",
   won: "bg-green-100 text-green-800",
   lost: "bg-gray-100 text-gray-600",
 };

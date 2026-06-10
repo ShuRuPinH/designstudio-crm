@@ -1,101 +1,81 @@
--- Типы
-CREATE TYPE user_role AS ENUM ('manager', 'admin');
-CREATE TYPE lead_status AS ENUM ('new', 'contacted', 'qualified', 'proposal', 'won', 'lost');
-
--- Профили пользователей
-CREATE TABLE profiles (
-  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  email TEXT NOT NULL,
-  full_name TEXT NOT NULL,
-  role user_role NOT NULL DEFAULT 'manager',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+-- Таблица профилей пользователей
+CREATE TABLE public.profiles (
+  id         uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  full_name  text,
+  role       text NOT NULL DEFAULT 'manager'
+             CHECK (role IN ('manager', 'admin')),
+  created_at timestamptz DEFAULT now()
 );
 
--- Лиды
-CREATE TABLE leads (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL,
-  email TEXT,
-  phone TEXT,
-  company TEXT,
-  status lead_status NOT NULL DEFAULT 'new',
-  assigned_to UUID NOT NULL REFERENCES profiles(id) ON DELETE RESTRICT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- Автообновление updated_at
-CREATE OR REPLACE FUNCTION update_updated_at()
-RETURNS TRIGGER AS $$
+-- Автоматически создаём профиль при регистрации
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
-  NEW.updated_at = now();
+  INSERT INTO public.profiles (id, full_name)
+  VALUES (NEW.id, NEW.raw_user_meta_data->>'full_name');
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
-CREATE TRIGGER leads_updated_at
-  BEFORE UPDATE ON leads
-  FOR EACH ROW
-  EXECUTE FUNCTION update_updated_at();
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- Функция проверки роли admin
-CREATE OR REPLACE FUNCTION is_admin()
-RETURNS BOOLEAN AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM profiles
-    WHERE id = auth.uid() AND role = 'admin'
-  );
-$$ LANGUAGE sql SECURITY DEFINER STABLE;
+-- Таблица лидов
+CREATE TABLE public.leads (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name        text NOT NULL,
+  company     text,
+  phone       text,
+  email       text,
+  status      text DEFAULT 'new'
+              CHECK (status IN ('new','contacted','won','lost')),
+  assigned_to uuid REFERENCES public.profiles(id),
+  notes       text,
+  created_at  timestamptz DEFAULT now()
+);
 
--- RLS
-ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE leads ENABLE ROW LEVEL SECURITY;
+-- Включаем RLS
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.leads    ENABLE ROW LEVEL SECURITY;
 
--- Profiles: пользователь видит свой профиль, admin — все
-CREATE POLICY "Users can view own profile"
-  ON profiles FOR SELECT
-  USING (auth.uid() = id);
+-- ПОЛИТИКИ ДЛЯ PROFILES
 
-CREATE POLICY "Admins can view all profiles"
-  ON profiles FOR SELECT
-  USING (is_admin());
+-- Каждый видит только свой профиль
+CREATE POLICY "profiles: own read"
+  ON public.profiles FOR SELECT
+  TO authenticated
+  USING (id = auth.uid());
 
-CREATE POLICY "Admins can update profiles"
-  ON profiles FOR UPDATE
-  USING (is_admin());
+-- Админ видит все профили
+CREATE POLICY "profiles: admin read all"
+  ON public.profiles FOR SELECT
+  TO authenticated
+  USING ((auth.jwt()->>'app_metadata')::jsonb->>'role' = 'admin');
 
-CREATE POLICY "Admins can insert profiles"
-  ON profiles FOR INSERT
-  WITH CHECK (is_admin());
+-- ПОЛИТИКИ ДЛЯ LEADS
 
-CREATE POLICY "Admins can delete profiles"
-  ON profiles FOR DELETE
-  USING (is_admin() AND id != auth.uid());
-
--- Leads: менеджер видит только свои, admin — все
-CREATE POLICY "Managers can view own leads"
-  ON leads FOR SELECT
+-- Менеджер видит только своих лидов
+CREATE POLICY "leads: manager sees own"
+  ON public.leads FOR SELECT
+  TO authenticated
   USING (assigned_to = auth.uid());
 
-CREATE POLICY "Admins can view all leads"
-  ON leads FOR SELECT
-  USING (is_admin());
+-- Менеджер может создавать лидов (автоматически назначает себя)
+CREATE POLICY "leads: manager insert"
+  ON public.leads FOR INSERT
+  TO authenticated
+  WITH CHECK (assigned_to = auth.uid());
 
-CREATE POLICY "Admins can insert leads"
-  ON leads FOR INSERT
-  WITH CHECK (is_admin());
+-- Менеджер может редактировать своих лидов
+CREATE POLICY "leads: manager update own"
+  ON public.leads FOR UPDATE
+  TO authenticated
+  USING (assigned_to = auth.uid())
+  WITH CHECK (assigned_to = auth.uid());
 
-CREATE POLICY "Admins can update leads"
-  ON leads FOR UPDATE
-  USING (is_admin());
-
-CREATE POLICY "Admins can delete leads"
-  ON leads FOR DELETE
-  USING (is_admin());
-
-CREATE POLICY "Managers can update own leads"
-  ON leads FOR UPDATE
-  USING (assigned_to = auth.uid());
-
--- Тестовые данные (опционально)
--- INSERT INTO auth.users ... — создайте пользователей через Supabase Studio или admin/users
+-- Админ видит всех лидов
+CREATE POLICY "leads: admin read all"
+  ON public.leads FOR ALL
+  TO authenticated
+  USING ((auth.jwt()->>'app_metadata')::jsonb->>'role' = 'admin');

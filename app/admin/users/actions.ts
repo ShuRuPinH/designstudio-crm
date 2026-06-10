@@ -5,13 +5,37 @@ import { createClient } from "@/lib/supabase/server";
 import type { UserRole } from "@/lib/types";
 import { revalidatePath } from "next/cache";
 
+async function syncUserRole(userId: string, role: UserRole) {
+  const adminClient = createAdminClient();
+
+  const { error: profileError } = await adminClient
+    .from("profiles")
+    .update({ role })
+    .eq("id", userId);
+
+  if (profileError) {
+    return { error: profileError.message };
+  }
+
+  const { error: authError } = await adminClient.auth.admin.updateUserById(
+    userId,
+    { app_metadata: { role } }
+  );
+
+  if (authError) {
+    return { error: authError.message };
+  }
+
+  return { success: true };
+}
+
 export async function createUser(formData: FormData) {
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
   const fullName = formData.get("full_name") as string;
   const role = formData.get("role") as UserRole;
 
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -37,22 +61,20 @@ export async function createUser(formData: FormData) {
       email,
       password,
       email_confirm: true,
+      user_metadata: { full_name: fullName },
+      app_metadata: { role },
     });
 
   if (authError || !newUser.user) {
     return { error: authError?.message ?? "Ошибка создания пользователя" };
   }
 
-  const { error: profileError } = await adminClient.from("profiles").insert({
-    id: newUser.user.id,
-    email,
-    full_name: fullName,
-    role,
-  });
-
-  if (profileError) {
-    await adminClient.auth.admin.deleteUser(newUser.user.id);
-    return { error: profileError.message };
+  if (role !== "manager") {
+    const result = await syncUserRole(newUser.user.id, role);
+    if (result.error) {
+      await adminClient.auth.admin.deleteUser(newUser.user.id);
+      return { error: result.error };
+    }
   }
 
   revalidatePath("/admin/users");
@@ -60,7 +82,7 @@ export async function createUser(formData: FormData) {
 }
 
 export async function updateUserRole(userId: string, role: UserRole) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -83,14 +105,9 @@ export async function updateUserRole(userId: string, role: UserRole) {
     return { error: "Нельзя изменить свою роль" };
   }
 
-  const adminClient = createAdminClient();
-  const { error } = await adminClient
-    .from("profiles")
-    .update({ role })
-    .eq("id", userId);
-
-  if (error) {
-    return { error: error.message };
+  const result = await syncUserRole(userId, role);
+  if (result.error) {
+    return { error: result.error };
   }
 
   revalidatePath("/admin/users");
@@ -98,7 +115,7 @@ export async function updateUserRole(userId: string, role: UserRole) {
 }
 
 export async function deleteUser(userId: string) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -119,6 +136,13 @@ export async function deleteUser(userId: string) {
 
   if (userId === user.id) {
     return { error: "Нельзя удалить себя" };
+  }
+
+  const adminClient = createAdminClient();
+  const { error } = await adminClient.auth.admin.deleteUser(userId);
+
+  if (error) {
+    return { error: error.message };
   }
 
   revalidatePath("/admin/users");

@@ -1,6 +1,6 @@
 "use client";
 
-import { ROLE_LABELS, type Profile } from "@/lib/types";
+import { ROLE_LABELS, type ProfileWithEmail } from "@/lib/types";
 import { useFormState, useFormStatus } from "react-dom";
 import { createUser, deleteUserAction, updateUserRoleAction } from "./actions";
 
@@ -101,12 +101,12 @@ function CreateUserForm() {
   );
 }
 
-function UserRow({ user, currentUserId }: { user: Profile; currentUserId: string }) {
+function UserRow({ user, currentUserId }: { user: ProfileWithEmail; currentUserId: string }) {
   const isSelf = user.id === currentUserId;
 
   return (
     <tr className="hover:bg-gray-50">
-      <td className="px-4 py-3 font-medium text-gray-900">{user.full_name}</td>
+      <td className="px-4 py-3 font-medium text-gray-900">{user.full_name ?? "—"}</td>
       <td className="px-4 py-3 text-gray-600">{user.email}</td>
       <td className="px-4 py-3">
         {isSelf ? (
@@ -156,7 +156,7 @@ function UserRow({ user, currentUserId }: { user: Profile; currentUserId: string
 }
 
 interface UsersManagementProps {
-  users: Profile[];
+  users: ProfileWithEmail[];
   currentUserId: string;
 }
 

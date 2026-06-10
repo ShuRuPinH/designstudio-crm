@@ -1,16 +1,28 @@
 import { getCurrentUser } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
-import type { Profile } from "@/lib/types";
+import { createAdminClient } from "@/lib/supabase/admin";
+import type { ProfileWithEmail } from "@/lib/types";
 import UsersManagement from "./UsersManagement";
 
 export default async function AdminUsersPage() {
   const user = await getCurrentUser();
-  const supabase = createClient();
+  const adminClient = createAdminClient();
 
-  const { data: users } = await supabase
-    .from("profiles")
-    .select("*")
-    .order("created_at", { ascending: false });
+  const [{ data: profiles }, { data: authData }] = await Promise.all([
+    adminClient
+      .from("profiles")
+      .select("*")
+      .order("created_at", { ascending: false }),
+    adminClient.auth.admin.listUsers(),
+  ]);
+
+  const emailById = new Map(
+    authData?.users.map((authUser) => [authUser.id, authUser.email ?? ""]) ?? []
+  );
+
+  const users: ProfileWithEmail[] = (profiles ?? []).map((profile) => ({
+    ...profile,
+    email: emailById.get(profile.id) ?? "",
+  }));
 
   return (
     <div>
@@ -21,7 +33,7 @@ export default async function AdminUsersPage() {
         </p>
       </div>
       <UsersManagement
-        users={(users as Profile[]) ?? []}
+        users={users}
         currentUserId={user!.id}
       />
     </div>

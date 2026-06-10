@@ -3,11 +3,11 @@ import { createClient } from "@/lib/supabase/server";
 import type { Lead } from "@/lib/types";
 
 export default async function AdminLeadsPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const { data: leads } = await supabase
     .from("leads")
-    .select("*, profiles(full_name, email)")
+    .select("*, profiles(full_name)")
     .order("created_at", { ascending: false });
 
   return (

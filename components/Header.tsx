@@ -43,7 +43,7 @@ export default function Header({ profile }: HeaderProps) {
         </div>
         <div className="flex items-center gap-4">
           <span className="text-sm text-gray-500">
-            {profile.full_name}
+            {profile.full_name ?? "Пользователь"}
           </span>
           <form action={signOut}>
             <button

@@ -5,7 +5,7 @@ import type { Lead } from "@/lib/types";
 
 export default async function DashboardPage() {
   const user = await getCurrentUser();
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const { data: leads } = await supabase
     .from("leads")
